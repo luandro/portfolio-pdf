@@ -6,6 +6,10 @@ const dir = process.argv[2] || process.env.DIR || __dirname
 const debug = process.env.DEV
 console.log(dir)
 
+if (!shell.which('inkscape')) {
+  shell.echo('Sorry, this script requires inkscape')
+  shell.exit(1)
+}
 if (!shell.which('pdfunite')) {
   shell.echo('Sorry, this script requires pdfunite')
   shell.exit(1)
@@ -19,6 +23,15 @@ if (!shell.which('ps2pdf')) {
   shell.echo('Sorry, this script requires ps2pdf')
   shell.exit(1)
 }
+
+const outputDir = dir + '/output'
+const webDir = outputDir + '/web'
+const printDir = outputDir + '/print'
+const pdfDir = outputDir + '/pdf'
+shell.rm('-rf', dir + '/output')
+shell.mkdir('-p', pdfDir)
+shell.mkdir('-p', webDir)
+shell.mkdir('-p', printDir)
 
 const sortByNum = (a, b) => {
   const numA = parseInt(a.split('p')[1])
@@ -34,10 +47,9 @@ const execAsync = async command =>
     })
   })
 
-const directory = dir + '/*.pdf'
-// Get all pdf in folder and order by name
-const pdfList = shell
-  .ls(directory)
+const svgDirectory = dir + '/*.svg'
+const svgList = shell
+  .ls(svgDirectory)
   .map(file => {
     const split = file.split('/')
     const pdfName = split[split.length - 1]
@@ -45,32 +57,34 @@ const pdfList = shell
     else return file
   })
   .sort(sortByNum)
+async function exportPdfs () {
+  for await (const svg of svgList) {
+    const pdfName = svg.split('.svg')[0] + '.pdf'
+    const command = `inkscape --file=${dir}/${svg} --export-pdf=${pdfDir}/${pdfName}`
+    await execAsync(command)
+  }
+}
+
 // Foreach pair join them:
-let pair = []
-let run = 0
-const cover = 0
-const counterCover = pdfList.length - 1
-const outputDir = __dirname + '/output'
-const webDir = outputDir + '/web'
-const printDir = outputDir + '/print'
-shell.rm('-rf', __dirname + '/output')
-shell.mkdir('-p', webDir)
-shell.mkdir('-p', printDir)
-async function mergePdfs () {
+async function mergePdfs (pdfList) {
+  let pair = []
+  let run = 0
+  const cover = 0
+  const counterCover = pdfList.length - 1
   // Online
   for await (const pdf of pdfList) {
     const num = parseInt(pdf.split('.pdf')[0].split('p')[1])
     if (num === cover || num === counterCover) {
       // Online cover
-      shell.cp(dir + '/' + pdf, webDir + '/' + 'p' + num + '.pdf')
+      shell.cp(pdfDir + '/' + pdf, webDir + '/' + 'p' + num + '.pdf')
     } else if (pair.length < 2) {
       pair.push(pdf)
     } else {
       run = run + 1
       // Online
-      const command = `pdfnup --a3paper --nup 2x1 -o ${webDir}/p${run}.pdf ${dir +
+      const command = `pdfnup --a3paper --nup 2x1 -o ${webDir}/p${run}.pdf ${pdfDir +
         '/' +
-        pair[0]} ${dir + '/' + pair[1]}`
+        pair[0]} ${pdfDir + '/' + pair[1]}`
       await execAsync(command)
       pair = []
       pair.push(pdf)
@@ -79,9 +93,9 @@ async function mergePdfs () {
   console.log('DONE ONLINE MERGING')
   // Print
   for (let index = 0; index < pdfList.length / 2; index++) {
-    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${dir +
+    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${pdfDir +
       '/' +
-      pdfList[index]} ${dir + '/' + pdfList[pdfList.length - 1 - index]}`
+      pdfList[index]} ${pdfDir + '/' + pdfList[pdfList.length - 1 - index]}`
     await execAsync(command)
   }
   console.log('DONE PRINT MERGING')
@@ -102,7 +116,10 @@ async function compressPdf (settings, file) {
 }
 
 async function start () {
-  await mergePdfs()
+  await exportPdfs()
+  const pdfs = await fs.readdirSync(pdfDir).sort(sortByNum)
+  console.log('start -> pdfs', pdfs)
+  await mergePdfs(pdfs)
   const webPdfs = fs.readdirSync(webDir).sort(sortByNum)
   const printPdfs = fs.readdirSync(printDir).sort(sortByNum)
   const webRaw = await pdfUnite(webPdfs, 'web')

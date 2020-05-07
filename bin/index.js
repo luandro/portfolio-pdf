@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const shell = require('shelljs')
 const fs = require('fs')
 const dir = process.env.DIR || __dirname

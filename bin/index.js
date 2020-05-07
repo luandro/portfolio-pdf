@@ -2,8 +2,9 @@
 
 const shell = require('shelljs')
 const fs = require('fs')
-const dir = process.env.DIR || __dirname
+const dir = process.argv[2] || process.env.DIR || __dirname
 const debug = process.env.DEV
+console.log(dir)
 
 if (!shell.which('pdfunite')) {
   shell.echo('Sorry, this script requires pdfunite')

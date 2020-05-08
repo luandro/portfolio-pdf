@@ -108,9 +108,12 @@ async function mergeForWeb (pdfList) {
 
 async function mergeForPrint (pdfList) {
   for (let index = 0; index < pdfList.length / 2; index++) {
-    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${pdfDir +
-      '/' +
-      pdfList[index]} ${pdfDir + '/' + pdfList[pdfList.length - 1 - index]}`
+    const odd = index % 2
+    const pdf1 =
+      pdfDir + '/' + pdfList[!odd ? pdfList.length - 1 - index : index]
+    const pdf2 =
+      pdfDir + '/' + pdfList[!odd ? index : pdfList.length - 1 - index]
+    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${pdf1} ${pdf2}`
     await execAsync(command)
   }
   if (debug) console.log('DONE PRINT MERGING')

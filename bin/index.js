@@ -4,7 +4,13 @@ const shell = require('shelljs')
 const fs = require('fs')
 const dir = process.argv[2] || process.env.DIR || __dirname
 const debug = process.env.DEV
-console.log(dir)
+const Spinner = require('cli-spinner').Spinner
+const spinner = new Spinner('processing.. %s')
+spinner.setSpinnerString('|/-\\')
+
+if (debug) {
+  console.log(dir)
+}
 
 if (!shell.which('inkscape')) {
   shell.echo('Sorry, this script requires inkscape')
@@ -41,8 +47,10 @@ const sortByNum = (a, b) => {
 
 const execAsync = async command =>
   new Promise((resolve, reject) => {
-    shell.exec(command, { silent: debug }, code => {
-      console.log('Exited!', code)
+    shell.exec(command, { silent: debug || true }, code => {
+      if (debug) {
+        console.log('Exited!', code)
+      }
       resolve()
     })
   })
@@ -65,42 +73,6 @@ async function exportPdfs () {
   }
 }
 
-// Foreach pair join them:
-async function mergePdfs (pdfList) {
-  let pair = []
-  let run = 0
-  const cover = 0
-  const counterCover = pdfList.length - 1
-  // Online
-  for await (const pdf of pdfList) {
-    const num = parseInt(pdf.split('.pdf')[0].split('p')[1])
-    if (num === cover || num === counterCover) {
-      // Online cover
-      shell.cp(pdfDir + '/' + pdf, webDir + '/' + 'p' + num + '.pdf')
-    } else if (pair.length < 2) {
-      pair.push(pdf)
-    } else {
-      run = run + 1
-      // Online
-      const command = `pdfnup --a3paper --nup 2x1 -o ${webDir}/p${run}.pdf ${pdfDir +
-        '/' +
-        pair[0]} ${pdfDir + '/' + pair[1]}`
-      await execAsync(command)
-      pair = []
-      pair.push(pdf)
-    }
-  }
-  console.log('DONE ONLINE MERGING')
-  // Print
-  for (let index = 0; index < pdfList.length / 2; index++) {
-    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${pdfDir +
-      '/' +
-      pdfList[index]} ${pdfDir + '/' + pdfList[pdfList.length - 1 - index]}`
-    await execAsync(command)
-  }
-  console.log('DONE PRINT MERGING')
-}
-// Get list of new A3s and unite them:
 async function pdfUnite (list, type) {
   const unitedList = list.map(i => outputDir + '/' + type + '/' + i).join(' ')
   const outputFile = `${outputDir}/${type}_raw.pdf`
@@ -115,17 +87,49 @@ async function compressPdf (settings, file) {
   await execAsync(command)
 }
 
+async function mergeForWeb (pdfList) {
+  const cover = 0
+  const counterCover = pdfList.length - 1
+  shell.cp(pdfDir + '/' + pdfList[cover], webDir + '/' + 'p' + cover + '.pdf')
+  shell.cp(
+    pdfDir + '/' + pdfList[counterCover],
+    webDir + '/' + 'p' + counterCover + '.pdf'
+  )
+  for (let index = 1; index < pdfList.length; index += 2) {
+    if (index !== counterCover) {
+      const command = `pdfnup --a3paper --nup 2x1 -o ${webDir}/p${index}.pdf ${pdfDir +
+        '/' +
+        pdfList[index]} ${pdfDir + '/' + pdfList[index + 1]}`
+      await execAsync(command)
+    }
+  }
+  if (debug) console.log('DONE ONLINE MERGING')
+}
+
+async function mergeForPrint (pdfList) {
+  for (let index = 0; index < pdfList.length / 2; index++) {
+    const command = `pdfnup --a3paper --nup 2x1 -o ${printDir}/p${index}.pdf ${pdfDir +
+      '/' +
+      pdfList[index]} ${pdfDir + '/' + pdfList[pdfList.length - 1 - index]}`
+    await execAsync(command)
+  }
+  if (debug) console.log('DONE PRINT MERGING')
+}
+
 async function start () {
+  spinner.start()
   await exportPdfs()
   const pdfs = await fs.readdirSync(pdfDir).sort(sortByNum)
-  console.log('start -> pdfs', pdfs)
-  await mergePdfs(pdfs)
+  await mergeForWeb(pdfs)
+  await mergeForPrint(pdfs)
   const webPdfs = fs.readdirSync(webDir).sort(sortByNum)
   const printPdfs = fs.readdirSync(printDir).sort(sortByNum)
   const webRaw = await pdfUnite(webPdfs, 'web')
   const printRaw = await pdfUnite(printPdfs, 'print')
   compressPdf('printer', printRaw)
   compressPdf('ebook', webRaw)
+  spinner.stop()
+  console.log('Done, check', outputDir)
 }
 
 start()

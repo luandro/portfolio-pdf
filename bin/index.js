@@ -2,7 +2,7 @@
 
 const shell = require('shelljs')
 const fs = require('fs')
-const dir = process.argv[2] || process.env.DIR || __dirname
+const dir = process.argv[2] || process.env.DIR || process.cwd()
 const debug = process.env.DEV
 const Spinner = require('cli-spinner').Spinner
 const spinner = new Spinner('processing.. %s')
